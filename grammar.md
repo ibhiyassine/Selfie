@@ -10,11 +10,13 @@ C\* is a tiny subset of the programming language C. C\* features global variable
 
 C\* Keywords: `uint64_t`, `void`, `sizeof`, `if`, `else`, `while`, `return`
 
-C\* Symbols: `integer`, `character`, `string`, `identifier`, `,`, `;`, `(`, `)`, `{`, `}`, `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `...`
+C\* Symbols: `hex_literal`, `integer`, `character`, `string`, `identifier`, `,`, `;`, `(`, `)`, `{`, `}`, `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `...`
 
 with:
 
 ```
+hex_literal = "0x", (hex_digit { hex_digit }).
+
 integer    = digit { digit } .
 
 character  = "'" printable_character "'" .
@@ -27,6 +29,8 @@ identifier = letter { letter | digit | "_" } .
 and:
 
 ```
+hex_digit = "0" | ... | "9" | "A" | ... | "F".
+
 digit  = "0" | ... | "9" .
 
 letter = "a" | ... | "z" | "A" | ... | "Z" .
@@ -52,6 +56,8 @@ statement  = assignment ";" | if | while | call ";" | return ";" .
 assignment = ( [ "*" ] identifier | "*" "(" expression ")" ) "=" expression .
 
 expression = arithmetic [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) arithmetic ] .
+
+shift  = arithmetic { ( "<<" | ">>" ) arithmetic }.
 
 arithmetic = term { ( "+" | "-" ) term } .
 

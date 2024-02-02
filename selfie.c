@@ -141,6 +141,7 @@ char* store_character(char* s, uint64_t i, char c);
 
 uint64_t is_letter(char c);
 uint64_t is_digit(char c);
+uint64_t is_hex(char c);
 
 char*    string_alloc(uint64_t l);
 uint64_t string_length(char* s);
@@ -463,6 +464,11 @@ uint64_t SYM_CHAR     = 31; // char
 uint64_t SYM_UNSIGNED = 32; // unsigned
 uint64_t SYM_CONST    = 33; // const
 
+// symbols for bitwise shift
+
+uint64_t SYM_BLS      = 34; // bitwise left shift
+uint64_t SYM_BRS      = 35; // bitwise right shift
+
 uint64_t* SYMBOLS; // strings representing symbols
 
 uint64_t MAX_IDENTIFIER_LENGTH = 64;  // maximum number of characters in an identifier
@@ -668,6 +674,7 @@ uint64_t is_expression();
 uint64_t is_comparison();
 uint64_t is_plus_or_minus();
 uint64_t is_mult_or_div_or_rem();
+uint64_t is_bitwise_shift();
 uint64_t is_factor();
 uint64_t is_literal();
 
@@ -2785,6 +2792,24 @@ uint64_t is_letter(char c) {
   else
     return 0;
 }
+uint64_t is_hex(char c) {
+  // ASCII code for 0 to 9 is between 48 and 57
+  // while ASCII COde for A to F is between 65 and 70
+  if (c >= '0') {
+    if (c <= '9') 
+      {return 1;}
+    if (c >= 'A') {
+      if (c <= 'F') 
+        {return 1;}
+      else 
+        { return 0;}
+    }
+    else 
+      { return 0;}
+  }
+  else 
+    { return 0;}
+}
 
 uint64_t is_digit(char c) {
   // ASCII codes for digits are in a contiguous interval
@@ -2868,6 +2893,65 @@ uint64_t string_compare(char* s, char* t) {
       i = i + 1;
     else
       return 0;
+}
+
+// Here's my ascii to hex procedure
+uint64_t atoh(char* s) {
+  uint64_t i;
+  uint64_t n;
+  uint64_t c;
+
+  // the conversion of the ASCII string in s to its
+  // numerical value n begins with the leftmost digit in s
+  i = 0;
+
+  // and the numerical value 0 for n
+  n = 0;
+
+  // load character (one byte) at index i in s from memory requires
+  // bit shifting since memory access can only be done at word granularity
+  c = load_character(s, i);
+
+  // loop until s is terminated
+  while (c != 0) {
+    // the numerical value of ASCII-encoded hexadecimal digits
+    // is offset by the ASCII code of '0' (which is 48) for the first 9 digits
+    // then the offset becomes '7' (which is 55) for the digits from 'A' to 'F'
+    if (c <= '9')
+      c = c - '0';
+    else
+      c = c - '7';
+
+    if (c > 15) {
+      printf("%s: cannot convert non-hexadecimal number %s\n", selfie_name, s);
+
+      exit(EXITCODE_SCANNERERROR);
+    }
+
+    // assert: s contains a hexadecimal number
+
+    // use base 16 but detect wrap around
+    if (n < UINT_MAX / 16)
+      n = n * 16 + c;
+    else if (n == UINT_MAX / 16){
+      if (c <= UINT_MAX % 16)
+        n = n * 16 + c;
+      else {
+        // s contains a decimal number larger than UINT_MAX
+        printf("%s: cannot convert out-of-bound number %s\n", selfie_name, s);
+
+        exit(EXITCODE_SCANNERERROR);
+      }
+    }
+    // go to the next digit
+    i = i + 1;
+
+    // load character (one byte) at index i in s from memory requires
+    // bit shifting since memory access can only be done at word granularity
+    c = load_character(s, i);
+  }
+
+  return n;
 }
 
 uint64_t atoi(char* s) {
@@ -3735,8 +3819,56 @@ void get_symbol() {
         if (character == '0') {
           // 0 is 0, not 00, 000, etc.
           get_character();
+          // There's a possibility that we are dealing with hexadecimal numbers
+          if (character == 'x') {
+            // I Now we are truly working with hexadecimal characters
+            get_character();
+            if (character == '0')
+            {
+              get_character();
+              literal = 0;
 
+            }
+            else {
+              integer = string_alloc(MAX_INTEGER_LENGTH);
+
+              i = 0;
+
+
+              // Now i should write my own is_hex procedure
+              while (is_hex(character)) { 
+
+                if (i >= MAX_INTEGER_LENGTH) {
+                  if (integer_is_signed)
+                    syntax_error_message("signed integer out of bound");
+                  else
+                    syntax_error_message("integer out of bound");
+
+                  exit(EXITCODE_SCANNERERROR);
+                }
+                store_character(integer, i, character);
+                
+                i = i + 1;
+
+                get_character();
+              }
+
+              store_character(integer, i, 0); // null-terminated string
+              // Now i need to create my own atoh() procedure
+              literal = atoh(integer);
+
+              if (integer_is_signed){
+                if (literal > INT64_MIN) {
+                  syntax_error_message("signed integer out of bound");
+
+                  exit(EXITCODE_SCANNERERROR);
+              }
+              }
+            }
+          }
+          else {
           literal = 0;
+          }
         } else {
           // accommodate integer and null for termination
           integer = string_alloc(MAX_INTEGER_LENGTH);
@@ -3898,7 +4030,13 @@ void get_symbol() {
           get_character();
 
           symbol = SYM_LEQ;
-        } else
+        } 
+        else if (character == CHAR_LT) {
+          get_character();
+
+          symbol = SYM_BLS;
+        }
+        else
           symbol = SYM_LT;
       } else if (character == CHAR_GT) {
         get_character();
@@ -3907,7 +4045,13 @@ void get_symbol() {
           get_character();
 
           symbol = SYM_GEQ;
-        } else
+        } 
+        else if (character == CHAR_GT) {
+          get_character();
+
+          symbol = SYM_BRS;
+        }
+        else
           symbol = SYM_GT;
       } else if (character == CHAR_DOT) {
         get_character();
@@ -4198,6 +4342,15 @@ uint64_t is_plus_or_minus() {
     return 1;
   else
     return 0;
+}
+
+uint64_t is_bitwise_shift() {
+  if (symbol == SYM_BLS)
+    return 1;
+  else if (symbol == SYM_BRS)
+    return 1;
+  else
+  return 0;
 }
 
 uint64_t is_mult_or_div_or_rem() {
@@ -8890,32 +9043,28 @@ void print_load_before() {
 
   printf(": ");
   print_register_hexadecimal(rs1);
-  printf(",");
 
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_read(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr)) {
-        if (is_system_register(rd))
-          printf("mem[0x%lX]==0x%lX |- ", vaddr, load_virtual_memory(pt, vaddr));
-        else
-          printf("mem[0x%lX]==%ld |- ", vaddr, load_virtual_memory(pt, vaddr));
-        print_register_value(rd);
-      } else
-        printf("0x%lX is unmapped (page fault)", vaddr);
-    else
-      printf("0x%lX is ill-segmented (segmentation fault)", vaddr);
-  else
-    printf("0x%lX is invalid", vaddr);
+    if (is_virtual_address_mapped(pt, vaddr)) {
+      if (is_system_register(rd))
+        printf(",mem[0x%lX]==0x%lX |- ", vaddr, load_virtual_memory(pt, vaddr));
+      else
+        printf(",mem[0x%lX]==%ld |- ", vaddr, load_virtual_memory(pt, vaddr));
+      print_register_value(rd);
+
+      return;
+    }
+
+  printf(" |-");
 }
 
 void print_load_after(uint64_t vaddr) {
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_read(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr)) {
-        printf(" -> ");
-        print_register_value(rd);
-        printf("==mem[0x%lX]", vaddr);
-      }
+    if (is_virtual_address_mapped(pt, vaddr)) {
+      printf(" -> ");
+      print_register_value(rd);
+      printf("==mem[0x%lX]", vaddr);
+    }
 }
 
 void record_load() {
@@ -8924,9 +9073,8 @@ void record_load() {
   vaddr = *(registers + rs1) + imm;
 
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_read(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr))
-        record_state(*(registers + rd));
+    if (is_virtual_address_mapped(pt, vaddr))
+      record_state(*(registers + rd));
 }
 
 uint64_t do_load() {
@@ -8990,32 +9138,28 @@ void print_store_before() {
 
   printf(": ");
   print_register_hexadecimal(rs1);
-  printf(",");
-  print_register_value(rs2);
-  printf(" |- ");
 
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_write(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr))
-        if (is_system_register(rs2))
-          printf("mem[0x%lX]==0x%lX", vaddr, load_virtual_memory(pt, vaddr));
-        else
-          printf("mem[0x%lX]==%ld", vaddr, load_virtual_memory(pt, vaddr));
+    if (is_virtual_address_mapped(pt, vaddr)) {
+      printf(",");
+      print_register_value(rs2);
+      if (is_system_register(rd))
+        printf(" |- mem[0x%lX]==0x%lX", vaddr, load_virtual_memory(pt, vaddr));
       else
-        printf("0x%lX is unmapped (page fault)", vaddr);
-    else
-      printf("0x%lX is ill-segmented (segmentation fault)", vaddr);
-  else
-    printf("0x%lX is invalid", vaddr);
+        printf(" |- mem[0x%lX]==%ld", vaddr, load_virtual_memory(pt, vaddr));
+
+      return;
+    }
+
+  printf(" |-");
 }
 
 void print_store_after(uint64_t vaddr) {
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_write(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr)) {
-        printf(" -> mem[0x%lX]==", vaddr);
-        print_register_value(rs2);
-      }
+    if (is_virtual_address_mapped(pt, vaddr)) {
+      printf(" -> mem[0x%lX]==", vaddr);
+      print_register_value(rs2);
+    }
 }
 
 void record_store() {
@@ -9024,9 +9168,8 @@ void record_store() {
   vaddr = *(registers + rs1) + imm;
 
   if (is_virtual_address_valid(vaddr, WORDSIZE))
-    if (is_valid_segment_write(vaddr))
-      if (is_virtual_address_mapped(pt, vaddr))
-        record_state(load_virtual_memory(pt, vaddr));
+    if (is_virtual_address_mapped(pt, vaddr))
+      record_state(load_virtual_memory(pt, vaddr));
 }
 
 uint64_t do_store() {
@@ -12126,7 +12269,8 @@ int main(int argc, char** argv) {
   init_system();
   init_target();
   init_kernel();
-
+  
+  printf("%s<selfiename>: This is IBHI Ahmed Yassine's selfie! \n", selfie_name);
   exit_code = selfie(0);
 
   return exit_selfie(exit_code, " [ ( -m | -d | -r | -y ) 0-4096 ... ]");
